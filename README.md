@@ -11,11 +11,11 @@ Right now it's just an idea, although hopefully I'll get a working prototype don
 that I can test how well/simple the integration into various languages/frameworks actually is.
 
 ## Philosophy
-This is NOT meant to be high-performant! If you want to build a service that needs to handle
+This bridge is **NOT meant to be high-performance!** If you want to build a service that needs to handle
 millions of WebSockets then using this bridge would probably be a terrible idea.
 
 However, there are a lot of little apps or MVP's that can only dream of having a couple
-of hundred simultaneous users and where simplicity/ease of use is much more important
+of hundred simultaneous users and where **simplicity/ease of use** is much more important
 that raw performance. If you have a project like this then ws2http might be a nice choice.
 
 ## Architecture
