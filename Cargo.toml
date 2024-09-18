@@ -1,0 +1,9 @@
+[package]
+name = "ws2http"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+futures-util = "*"
+tokio = { version = "*", features = ["full"] }
+tokio-tungstenite = "*"
