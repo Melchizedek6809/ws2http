@@ -6,6 +6,18 @@ HTTP request/response model but doesn't really have a nice way of doing WebSocke
 what I want to build here is a WS <-> HTTP Bridge that preserves the CGI model as much
 as possible.
 
+## Status
+Right now it's just an idea, although hopefully I'll get a working prototype done pretty soon so
+that I can test how well/simple the integration into various languages/frameworks actually is.
+
+## Philosophy
+This is NOT meant to be high-performant! If you want to build a service that needs to handle
+millions of WebSockets then using this bridge would probably be a terrible idea.
+
+However, there are a lot of little apps or MVP's that can only dream of having a couple
+of hundred simultaneous users and where simplicity/ease of use is much more important
+that raw performance. If you have a project like this then ws2http might be a nice choice.
+
 ## Architecture
 The idea is that a Rust program keeps translating WebSocket events into HTTP request.
 That's it.  It should mostly be used like nginx or MariaDB, as in: mostly be installed via a distro's
@@ -26,6 +38,3 @@ do a single request for each WebSocket event (Open/Close/Message). Once a connec
 the connection will get a unique ID and the Url and Cookies are stored in a Map so that we can
 add them to any event so that the application can handle things appropriately.
 
-## Status
-Right now it's just an idea, although hopefully I'll get a working prototype done pretty soon so
-that I can test how well/simple the integration into various languages/frameworks actually is.
