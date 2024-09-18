@@ -38,3 +38,10 @@ do a single request for each WebSocket event (Open/Close/Message). Once a connec
 the connection will get a unique ID and the Url and Cookies are stored in a Map so that we can
 add them to any event so that the application can handle things appropriately.
 
+## Why Rust?
+Rust to me sits in the sweet spot, where it offers great performance but unlike C allows you to
+more quickly get to a result, additionally Rust programs seem much more reliable/stable in my
+experience since it's quite obvious when you're doing risky things in Rust.
+
+Though I suppose Go would also work quite well for something like this, but since I've written
+far more Rust than Go I'll go with Rust.
