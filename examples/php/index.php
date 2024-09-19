@@ -14,7 +14,7 @@ $roomname = $_GET['room'] ?? "";
 if($roomname)  {
 	?>
 	<h1>TinyChat - <?= htmlspecialchars($roomname) ?></h1>
-	<div class="chat-wrap" room-name="<?= htmlspecialchars($roomname) ?>">
+	<div class="chat-wrap" data-room="<?= htmlspecialchars($roomname) ?>">
 		<div class="chat-users"></div>
 		<div class="chat-messages"></div>
 		<form>

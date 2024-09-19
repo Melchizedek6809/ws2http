@@ -1,27 +1,29 @@
 import http from "node:http";
 
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import express from "express";
 
 let server: http.Server | undefined;
 const app = express();
-//const webSockets = new Set<Socket>();
+const sockets = new Set<WSConnection>();
 
-const parseCookiesRaw = (req: http.IncomingMessage) => {
-	const ret: Record<string, string> = {};
-	const cookies = (req.headers.cookie || "").split(";");
-	for (const cookie of cookies) {
-		const s = cookie.split("=");
-		if (s.length === 2) {
-			const key = s[0];
-			const val = decodeURIComponent(s[1]);
-			ret[key] = val;
+interface WSConnection {
+	uri: string;
+	cookies: string;
+	ws: WebSocket;
+}
+
+const receivedMessage = async (con: WSConnection, uri: string, msg: any) => {
+	console.log("Message: ", uri, msg);
+	for (const c of sockets.values()) {
+		if (c.ws === con.ws) {
+			continue;
 		}
+		c.ws.send(msg.toString());
 	}
-	return ret;
-};
+}
 
-export const serverListen = async () => {
+const serverListen = async () => {
 	app.use(async (req, res) => {
 		try {
 			const webReq = {
@@ -38,11 +40,17 @@ export const serverListen = async () => {
 
 	const wss = new WebSocketServer({ server: server, path: "/ws" });
 	wss.on("connection", async (ws, req) => {
-		const cookies = parseCookiesRaw(req);
-		//webSockets.add(new Socket(ws, session));
+		const cookies = req.headers.cookie || "";
+		const uri = req.url || "/ws";
+		const con = { uri, cookies, ws };
+		sockets.add(con);
+		ws.on("message", msg => {
+			receivedMessage(con, uri, msg);
+		});
 	});
 
 	return new Promise<void>((resolve) => {
 		server?.listen(8080, "127.0.0.1", resolve);
 	});
 };
+serverListen();
