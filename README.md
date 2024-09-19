@@ -1,4 +1,4 @@
-# WebSocket <-> HTTP Bridge, written in Rust
+# WebSocket <-> HTTP Bridge
 So, as I've been pondering how I'll be writing some little Web Apps I've noticed that a lot
 of languages that work really well for HTTP/REST don't really work for WebSockets. I suppose
 one of the bigger examples would be PHP, which works quite alright with the classical
@@ -19,7 +19,7 @@ of hundred simultaneous users and where **simplicity/ease of use** is much more 
 that raw performance. If you have a project like this then ws2http might be a nice choice.
 
 ## Architecture
-The idea is that a Rust program keeps translating WebSocket events into HTTP request.
+The idea is that a small program keeps translating WebSocket events into HTTP request.
 That's it.  It should mostly be used like nginx or MariaDB, as in: mostly be installed via a distro's
 package manager (or built from source), and then run as a system service (or if you're into docker, run it
 in a container).
@@ -37,11 +37,3 @@ You can then configure in ws2http how to route events based on the URL using reg
 do a single request for each WebSocket event (Open/Close/Message). Once a connection is established
 the connection will get a unique ID and the Url and Cookies are stored in a Map so that we can
 add them to any event so that the application can handle things appropriately.
-
-## Why Rust?
-Rust to me sits in the sweet spot, where it offers great performance but unlike C allows you to
-more quickly get to a result, additionally Rust programs seem much more reliable/stable in my
-experience since it's quite obvious when you're doing risky things in Rust.
-
-Though I suppose Go would also work quite well for something like this, but since I've written
-far more Rust than Go I'll go with Rust.

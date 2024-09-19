@@ -1,0 +1,34 @@
+{
+  "name": "ws2http",
+  "version": "0.1.0",
+  "description": "A small WS <-> HTTP Bridge",
+  "main": "src/index.ts",
+  "directories": {
+    "example": "examples"
+  },
+  "type": "module",
+	"author": "Benjamin Vincent Schulenburg <bennyschulenburg@gmx.de>",
+  "license": "MIT",
+  "scripts": {
+		"dev": "NODE_ENV=development tsx --watch --watch-path=./src/ ./src/index.ts",
+		"check": "tsc -p ./tsconfig.json --noEmit",
+		"format": "npx @biomejs/biome format --write ./src",
+		"start": "tsx ./src/index.ts",
+		"prepare": "husky || true"
+	},
+	"dependencies": {
+		"dotenv": "latest",
+		"express": "latest",
+		"smol-toml": "latest",
+		"tsx": "latest",
+		"ws": "latest"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "latest",
+		"@types/express": "latest",
+		"@types/node": "latest",
+		"@types/ws": "latest",
+		"husky": "latest",
+		"typescript": "latest"
+	}
+}
