@@ -11,14 +11,18 @@ const initChat = chatWrap => {
 		showMessage(msg.data);
 	});
 
-	const showMessage = msg => {
+	const showMessage = (msg, self) => {
 		const message = document.createElement('div');
 		message.classList.add('chat-message');
+		if (self) {
+			message.classList.add('chat-message-self');
+		}
 		message.textContent = msg;
 		messages.appendChild(message);
 	};
 
 	const sendMessage = msg => {
+		showMessage(msg, true);
 		ws.send(msg);
 	};
 

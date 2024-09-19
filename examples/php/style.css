@@ -42,9 +42,14 @@ input[type=submit] {
 }
 
 .chat-message {
-	margin: 1rem 0;
+	width: calc(100% - 4rem);
+	margin: 1rem auto 1rem 0;
 	padding: 0.5rem 1rem;
-	border-radius: 0.5rem;
 	background: #fff;
 	box-shadow: 0 0 0.5rem rgba(0,0,0,0.1);
+}
+
+.chat-message-self {
+	background: #f0f0f0;
+	margin: 1rem 0 1rem auto;
 }
