@@ -8,7 +8,10 @@ const initChat = chatWrap => {
 
 	const ws = new WebSocket(wsUrl + `?room=${encodeURIComponent(chatWrap.dataset.room)}`);
 	ws.addEventListener('message', msg => {
-		showMessage(msg.data);
+		const msg = JSON.parse(msg.data || '{}');
+		if (msg.type === 'message') {
+			showMessage(msg.text);
+		}
 	});
 
 	const showMessage = (msg, self) => {
@@ -28,10 +31,14 @@ const initChat = chatWrap => {
 
 	form.addEventListener('submit', e => {
 		e.preventDefault();
-		const msg = input.value;
-		if (!msg) return;
+		const msgText = input.value;
+		if (!msgText) return;
 		input.value = '';
-		sendMessage(msg);
+		const msg = {
+			type: 'message',
+			text: msgText,
+		};
+		sendMessage(JSON.stringify(msg));
 	});
 	input.focus();
 };

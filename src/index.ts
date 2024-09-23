@@ -42,6 +42,7 @@ const dispatchEvent = async (con: WSConnection, event: WSEvent) => {
 			},
 			body: formData,
 		});
+
 		const text = await res.text();
 		console.log(text);
 	} catch (error) {
@@ -71,7 +72,7 @@ const serverListen = async () => {
 
 			dispatchEvent(con, { verb: "OPEN" });
 
-			ws.on("message", (data) => dispatchEvent(con, { verb: "MESSAGE", data }));
+			ws.on("message", data => dispatchEvent(con, { verb: "MESSAGE", data }));
 
 			ws.on("close", () => {
 				dispatchEvent(con, { verb: "CLOSE" });
