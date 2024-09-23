@@ -28,9 +28,7 @@ interface WSEvent {
 // A flush command might also be useful, so that the client can truncate the websocket table
 // or something like that.
 let idCounter = 0;
-const genSym = (): string => {
-	return String(++idCounter);
-}
+const genSym = () => String(++idCounter);
 
 // Figure out where to send the http request for this particular event and
 // then do a POST request to the handler.
