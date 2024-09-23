@@ -22,15 +22,18 @@ interface WSEvent {
 
 const dispatchEvent = async (con: WSConnection, event: WSEvent) => {
 	const formData = new FormData();
-	formData.append("id", String(con.id));
-	formData.append("uri", con.uri);
-	formData.append("verb", event.verb);
+	formData.set("id", String(con.id));
+	formData.set("uri", con.uri);
+	formData.set("verb", event.verb);
 	if (event.data) {
-		formData.append("data", JSON.stringify(event.data));
+		formData.set("data", event.data);
 	}
 
 	const res = await fetch("http://localhost:8000/ws.php", {
 		method: "POST",
+		headers: {
+			"cookie": con.cookies,
+		},
 		body: formData,
 	});
 	const text = await res.text();
@@ -38,12 +41,11 @@ const dispatchEvent = async (con: WSConnection, event: WSEvent) => {
 };
 
 const receivedMessage = async (con: WSConnection, uri: string, msg: any) => {
-	console.log("Message: ", uri, msg);
 	for (const c of sockets.values()) {
 		if (c.ws === con.ws) {
 			continue;
 		}
-		c.ws.send(msg.toString());
+		c.ws.send(msg.toString('utf8'));
 	}
 }
 
@@ -65,9 +67,9 @@ const serverListen = async () => {
 		const con = { id: ++idCounter, uri, cookies, ws };
 		sockets.add(con);
 		dispatchEvent(con, { verb: "OPEN" });
-		ws.on("message", msg => {
-			dispatchEvent(con, { verb: "MESSAGE", data: msg });
-			receivedMessage(con, uri, msg);
+		ws.on("message", data => {
+			dispatchEvent(con, { verb: "MESSAGE", data });
+			receivedMessage(con, uri, data);
 		});
 		ws.on("close", () => {
 			sockets.delete(con);
