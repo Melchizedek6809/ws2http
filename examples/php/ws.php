@@ -1,7 +1,13 @@
 <?php
 $ws2http_url = "http://localhost:8080";
 
+$id   = $_POST['id']   ?? "";
+$uri  = $_POST['uri']  ?? "";
+$data = $_POST['data'] ?? "";
+
 function ws2http(string $uri, array $data) {
+	global $ws2http_url;
+
 	$ch = curl_init($ws2http_url . $uri);
 	curl_setopt($ch, CURLOPT_POST, 1);
 	curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
@@ -17,16 +23,13 @@ function sendMessageToId(string $id, string $data) {
 	]);
 }
 
-function sendMessageToUri(string $uri, string $data) {
+function sendMessageToUri(string $uri, string $data, string $notTo = "") {
 	ws2http($uri, [
 		"verb" => "MESSAGE",
+		"notTo" => $notTo,
 		"data" => $data,
 	]);
 }
-
-$id   = $_POST['id']   ?? "";
-$uri  = $_POST['uri']  ?? "";
-$data = $_POST['data'] ?? "";
 
 switch($_POST['verb'] ?? ""){
 	case "OPEN":
@@ -40,10 +43,7 @@ switch($_POST['verb'] ?? ""){
 			http_response_code(400);
 			die("Missing parameters");
 		}
-		print_r($uri);
-		print_r("\n");
-		print_r($data);
-		print_r("\n\n");
+		sendMessageToUri($uri, $data, $id);
 		break;
 	case "CLOSE":
 	case "ERROR":

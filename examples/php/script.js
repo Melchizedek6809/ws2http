@@ -8,9 +8,10 @@ const initChat = chatWrap => {
 
 	const ws = new WebSocket(wsUrl + `?room=${encodeURIComponent(chatWrap.dataset.room)}`);
 	ws.addEventListener('message', msg => {
-		const msg = JSON.parse(msg.data || '{}');
-		if (msg.type === 'message') {
-			showMessage(msg.text);
+		const o = JSON.parse(msg.data || '{}');
+		console.log(o);
+		if (o.type === 'message') {
+			showMessage(o);
 		}
 	});
 
@@ -20,13 +21,13 @@ const initChat = chatWrap => {
 		if (self) {
 			message.classList.add('chat-message-self');
 		}
-		message.textContent = msg;
+		message.textContent = msg.text;
 		messages.appendChild(message);
 	};
 
 	const sendMessage = msg => {
 		showMessage(msg, true);
-		ws.send(msg);
+		ws.send(JSON.stringify(msg));
 	};
 
 	form.addEventListener('submit', e => {
@@ -38,7 +39,7 @@ const initChat = chatWrap => {
 			type: 'message',
 			text: msgText,
 		};
-		sendMessage(JSON.stringify(msg));
+		sendMessage(msg);
 	});
 	input.focus();
 };

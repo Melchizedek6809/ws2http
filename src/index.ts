@@ -20,6 +20,13 @@ interface WSEvent {
 }
 
 // ToDo: a more sophisticated way to generate unique ids
+// 
+// This is mainly a problem because if the server restarts, we'll end up reusing prior IDs,
+// so a client might accidentally send a message to a different client. By having random IDs,
+// this becomes highly unlikely.
+//
+// A flush command might also be useful, so that the client can truncate the websocket table
+// or something like that.
 let idCounter = 0;
 const genSym = (): string => {
 	return String(++idCounter);
@@ -51,8 +58,41 @@ const dispatchEvent = async (con: WSConnection, event: WSEvent) => {
 };
 
 const serverListen = async () => {
+	app.use(express.urlencoded());
 	app.use(async (req, res) => {
+		const uri = req.originalUrl;
+		const body = req.body;
 		try {
+			if(req.method !== "POST"){
+				throw new Error("Please use POST");
+			}
+			if(!body.verb){
+				throw new Error("Missing verb");
+			}
+
+			switch(body.verb) {
+			case "MESSAGE":
+				if(body.id){
+					const con = sockets.get(body.id);
+					if (con) {
+						con.ws.send(body.data);
+					}
+				} else {
+					const notTo = new Set((body.notTo || "").split(","));
+					for(const con of sockets.values()){
+						if(notTo.has(con.id)){
+							continue;
+						}
+						if(con.uri === uri){
+							con.ws.send(body.data);
+						}
+					}
+				}
+				break;
+			default:
+				console.log(`Received ${body.verb} for ${body.id}`);
+				break;
+			}
 			res.status(200).set({ "Content-Type": "text/html" }).end("Hello");
 		} catch (error) {
 			console.error(error);
