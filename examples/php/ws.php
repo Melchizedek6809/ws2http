@@ -32,25 +32,12 @@ function sendMessageToUri(string $uri, string $data, string $notTo = "") {
 }
 
 switch($_POST['verb'] ?? ""){
-	case "OPEN":
-		if (!$id) {
-			http_response_code(400);
-			die("Missing parameters");
-		}
-		break;
 	case "MESSAGE":
 		if (!$id || !$data) {
 			http_response_code(400);
 			die("Missing parameters");
 		}
 		sendMessageToUri($uri, $data, $id);
-		break;
-	case "CLOSE":
-	case "ERROR":
-		if (!$id) {
-			http_response_code(400);
-			die("Missing parameters");
-		}
 		break;
 	default:
 		break;
