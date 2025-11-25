@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::state::GlobalState;
+use anyhow::Result;
 use axum::{
     extract::{
         OriginalUri, Query, State, WebSocketUpgrade,
@@ -10,24 +11,85 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures::{sink::SinkExt, stream::StreamExt};
+use reqwest::Client;
 use tokio::sync::mpsc;
+use uuid::Uuid;
+use serde::Deserialize;
 
-#[derive(Debug, Clone)]
-struct HandlerState {
-    endpoint: String,
-    query: String,
-    path: String,
-    user_agent: String,
-    cookie: String,
-    forwarded_for: String,
+enum EndpointEvent {
+    Connect,
+    Message,
+    Close,
 }
 
-async fn handle_socket(socket: WebSocket, handler_state: HandlerState, state: GlobalState) {
+#[derive(Debug, Clone)]
+pub struct HandlerState {
+    pub endpoint: String,
+    pub query: String,
+    pub path: String,
+    pub user_agent: String,
+    pub cookie: String,
+    pub forwarded_for: String,
+
+    pub socket_id: Uuid,
+    pub aliases: HashSet<String>,
+    pub meta: HashMap<String, String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct EndpointResponse {
+    pub aliases: Option<Vec<String>>,
+    pub meta: Option<HashMap<String, String>>,
+    pub text_messages: Option<Vec<String>>,
+}
+
+impl HandlerState {
+    async fn endpoint_request(&mut self, http: Client, event_type: EndpointEvent, text: Option<&str>) -> Result<EndpointResponse> {
+        let method = match event_type {
+            EndpointEvent::Close => "close",
+            EndpointEvent::Connect => "connect",
+            EndpointEvent::Message => "message",
+        };
+
+        let form = reqwest::multipart::Form::new()
+            .text("method", method)
+            .text("query", self.query.to_string())
+            .text("path", self.path.to_string());
+
+        let form = if let Some(text) = text {
+            form.text("text", text.to_string())
+        } else {
+            form
+        };
+
+        let app = http
+            .request(reqwest::Method::POST, &self.endpoint)
+            .header("User-Agent", self.user_agent.to_string())
+            .header("Cookie", self.cookie.to_string())
+            .header("X-Forwarded-For", self.forwarded_for.to_string())
+            .multipart(form)
+            .build()?;
+
+        let res = http.execute(app).await?;
+        let raw = res.text().await?;
+        let res: EndpointResponse = serde_json::from_str(&raw)?;
+
+        if let Some(meta) = &res.meta {
+            for (key, val) in meta.iter() {
+                self.meta.insert(key.to_owned(), val.to_owned());
+            }
+        }
+
+        Ok(res)
+    }
+}
+
+async fn handle_socket(socket: WebSocket, mut handler_state: HandlerState, state: GlobalState) {
     let (socket_sender, mut receiver) = socket.split();
     // Bounded channel with capacity of 100 messages to prevent unbounded memory growth
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(100);
 
-    let socket_id = state.register_socket(outgoing_tx.clone()).await;
+    state.register_socket(handler_state.socket_id, outgoing_tx.clone()).await;
 
     let send_task = tokio::spawn(async move {
         let mut socket_sender = socket_sender;
@@ -49,25 +111,9 @@ async fn handle_socket(socket: WebSocket, handler_state: HandlerState, state: Gl
 
         match message {
             Message::Text(payload) => {
-                let http = state.http_client();
-                let form = reqwest::multipart::Form::new()
-                    .text("method", "message")
-                    .text("text", payload.to_string())
-                    .text("query", handler_state.query.to_string())
-                    .text("path", handler_state.path.to_string());
-                let app = http
-                    .request(reqwest::Method::POST, &handler_state.endpoint)
-                    .header("User-Agent", handler_state.user_agent.to_string())
-                    .header("Cookie", handler_state.cookie.to_string())
-                    .header("X-Forwarded-For", handler_state.forwarded_for.to_string())
-                    .multipart(form)
-                    .build();
-
-                if let Ok(app) = app {
-                    let res = http.execute(app).await;
-                    if let Ok(_res) = res {
-
-                    }
+                let req = handler_state.endpoint_request(state.http_client(), EndpointEvent::Message, Some(&payload)).await;
+                if req.is_err() {
+                    break;
                 }
 
                 if outgoing_tx.try_send(Message::Text(payload)).is_err() {
@@ -78,24 +124,9 @@ async fn handle_socket(socket: WebSocket, handler_state: HandlerState, state: Gl
             Message::Ping(_) => {}
             Message::Pong(_) => {}
             Message::Close(frame) => {
-                let http = state.http_client();
-                let form = reqwest::multipart::Form::new()
-                    .text("method", "close")
-                    .text("query", handler_state.query.to_string())
-                    .text("path", handler_state.path.to_string());
-                let app = http
-                    .request(reqwest::Method::POST, &handler_state.endpoint)
-                    .header("User-Agent", handler_state.user_agent.to_string())
-                    .header("Cookie", handler_state.cookie.to_string())
-                    .header("X-Forwarded-For", handler_state.forwarded_for.to_string())
-                    .multipart(form)
-                    .build();
-
-                if let Ok(app) = app {
-                    let res = http.execute(app).await;
-                    if let Ok(_res) = res {
-
-                    }
+                let req = handler_state.endpoint_request(state.http_client(), EndpointEvent::Close, None).await;
+                if req.is_err() {
+                    break;
                 }
 
                 let _ = outgoing_tx.try_send(Message::Close(frame));
@@ -104,7 +135,7 @@ async fn handle_socket(socket: WebSocket, handler_state: HandlerState, state: Gl
         }
     }
 
-    state.unregister_socket(socket_id).await;
+    state.unregister_socket(handler_state.socket_id).await;
     drop(outgoing_tx);
     let _ = send_task.await;
 }
@@ -141,40 +172,25 @@ pub async fn main_handler(
         .unwrap_or("")
         .to_string();
 
-    let handler_state = HandlerState {
+    let socket_id = Uuid::now_v7();
+
+    let mut handler_state = HandlerState {
         endpoint: "http://localhost:1234/chat.php".to_string(),
         cookie,
         user_agent,
         forwarded_for,
         query: query.to_string(),
         path: path.to_string(),
+
+        socket_id,
+        aliases: HashSet::new(),
+        meta: HashMap::new(),
     };
 
-    let http = state.http_client();
-    let form = reqwest::multipart::Form::new()
-        .text("method", "connect")
-        .text("query", query.to_string())
-        .text("path", path.to_string());
-    let app = http
-        .request(reqwest::Method::POST, &handler_state.endpoint)
-        .header("User-Agent", handler_state.user_agent.to_string())
-        .header("Cookie", handler_state.cookie.to_string())
-        .header("X-Forwarded-For", handler_state.forwarded_for.to_string())
-        .multipart(form)
-        .build();
-
-    if let Ok(app) = app {
-        let res = http.execute(app).await;
-        match res {
-            Err(err) => {
-                eprintln!("Error: {err:?}");
-                (axum::http::StatusCode::BAD_GATEWAY, "Bad request").into_response()
-            }
-            Ok(res) => {
-                eprintln!("Res: {res:?}");
-                ws.on_upgrade(|socket| handle_socket(socket, handler_state, state))
-            }
-        }
+    let req = handler_state.endpoint_request(state.http_client(), EndpointEvent::Connect, None).await;
+    if let Ok(req) = req {
+        state.handle_endpoint_response(&mut handler_state, req).await;
+        ws.on_upgrade(|socket| handle_socket(socket, handler_state, state))
     } else {
         (axum::http::StatusCode::BAD_REQUEST, "Bad request").into_response()
     }
