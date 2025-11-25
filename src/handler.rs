@@ -1,14 +1,14 @@
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, time::Duration};
 
 use crate::state::GlobalState;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use axum::{
     extract::{
-        OriginalUri, Query, State, WebSocketUpgrade,
+        OriginalUri, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
     http::HeaderMap,
-    response::{IntoResponse, Response},
+    response::{Response},
 };
 use futures::{sink::SinkExt, stream::StreamExt};
 use reqwest::Client;
@@ -36,7 +36,7 @@ pub struct HandlerState {
     pub meta: HashMap<String, String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default)]
 pub struct EndpointResponse {
     pub aliases: Option<Vec<String>>,
     pub meta: Option<HashMap<String, String>>,
@@ -67,12 +67,16 @@ impl HandlerState {
             .header("User-Agent", self.user_agent.to_string())
             .header("Cookie", self.cookie.to_string())
             .header("X-Forwarded-For", self.forwarded_for.to_string())
+            .timeout(Duration::from_millis(3000)) // 3 second timeout for the endpoint - if the endpoint is overloaded we should drop the connection
             .multipart(form)
             .build()?;
 
         let res = http.execute(app).await?;
+        if !res.status().is_success() {
+            return Err(anyhow!("Endpoint request returned {}", res.status()));
+        }
         let raw = res.text().await?;
-        let res: EndpointResponse = serde_json::from_str(&raw)?;
+        let res: EndpointResponse = serde_json::from_str(&raw).unwrap_or_default();
 
         if let Some(meta) = &res.meta {
             for (key, val) in meta.iter() {
@@ -84,13 +88,24 @@ impl HandlerState {
     }
 }
 
-async fn handle_socket(socket: WebSocket, mut handler_state: HandlerState, state: GlobalState, res: EndpointResponse) {
+async fn handle_socket(socket: WebSocket, mut handler_state: HandlerState, state: GlobalState) {
     let (socket_sender, mut receiver) = socket.split();
     // Bounded channel with capacity of 100 messages to prevent unbounded memory growth
-    let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(100);
+    let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(512);
+
+    let res = handler_state.endpoint_request(state.http_client(), EndpointEvent::Connect, None).await;
+    let res = match res {
+        Ok(res) => res,
+        Err(_) => return,
+    };
 
     state.register_socket(handler_state.socket_id, outgoing_tx.clone()).await;
-    state.handle_endpoint_response(&mut handler_state, res).await;
+    if state.handle_endpoint_response(&mut handler_state, res).await.is_err() {
+        state.unregister_socket(handler_state.socket_id).await;
+        state.unregister_handler_state(&handler_state).await;
+        let _ = outgoing_tx.try_send(Message::Close(None));
+        return;
+    }
 
     let send_task = tokio::spawn(async move {
         let mut socket_sender = socket_sender;
@@ -111,33 +126,38 @@ async fn handle_socket(socket: WebSocket, mut handler_state: HandlerState, state
         match message {
             Message::Text(payload) => {
                 let req = handler_state.endpoint_request(state.http_client(), EndpointEvent::Message, Some(&payload)).await;
-                if let Ok(req) = req {
-                    state.handle_endpoint_response(&mut handler_state, req).await;
-                } else {
-                    break;
-                }
-
-                if outgoing_tx.try_send(Message::Text(payload)).is_err() {
-                    break;
+                match req {
+                    Ok(req) => {
+                        let res = state.handle_endpoint_response(&mut handler_state, req).await;
+                        if res.is_err() {
+                            eprintln!("{res:?}");
+                            break;
+                        }
+                    },
+                    Err(err) => {
+                        eprintln!("{err:?}");
+                        break;
+                    },
                 }
             }
             Message::Binary(_) => {}
-            Message::Ping(_) => {}
             Message::Pong(_) => {}
-            Message::Close(frame) => {
-                let req = handler_state.endpoint_request(state.http_client(), EndpointEvent::Close, None).await;
-                if let Ok(req) = req {
-                    state.handle_endpoint_response(&mut handler_state, req).await;
-                } else {
+            Message::Ping(payload) => {
+                if outgoing_tx.try_send(Message::Pong(payload)).is_err() {
                     break;
                 }
-
+            }
+            Message::Close(frame) => {
+                // Doesn't matter if there's an error in the endpoint here since we're closing the socket
                 let _ = outgoing_tx.try_send(Message::Close(frame));
+                let _ = handler_state.endpoint_request(state.http_client(), EndpointEvent::Close, None).await;
                 break;
             }
         }
     }
 
+    // Always try and explicitly close the socket on the client
+    let _ = outgoing_tx.try_send(Message::Close(None));
     state.unregister_socket(handler_state.socket_id).await;
     state.unregister_handler_state(&handler_state).await;
     drop(outgoing_tx);
@@ -148,15 +168,12 @@ pub async fn main_handler(
     ws: WebSocketUpgrade,
     headers: HeaderMap,
     uri: OriginalUri,
-    Query(params): Query<HashMap<String, String>>,
     State(state): State<GlobalState>,
 ) -> Response {
     let uri = uri.0.path_and_query();
     let (path, query) = uri
         .map(|v| (v.path(), v.query().unwrap_or_default()))
         .unwrap_or_default();
-
-    println!("{path:?} {query:?} {headers:?}\n{params:?}");
 
     let cookie = headers
         .get("Cookie")
@@ -178,7 +195,7 @@ pub async fn main_handler(
 
     let socket_id = Uuid::now_v7();
 
-    let mut handler_state = HandlerState {
+    let handler_state = HandlerState {
         endpoint: "http://localhost:1234/chat.php".to_string(),
         cookie,
         user_agent,
@@ -191,10 +208,5 @@ pub async fn main_handler(
         meta: HashMap::new(),
     };
 
-    let req = handler_state.endpoint_request(state.http_client(), EndpointEvent::Connect, None).await;
-    if let Ok(req) = req {
-        ws.on_upgrade(|socket| handle_socket(socket, handler_state, state, req))
-    } else {
-        (axum::http::StatusCode::BAD_REQUEST, "Bad request").into_response()
-    }
+    ws.on_upgrade(|socket| handle_socket(socket, handler_state, state))
 }

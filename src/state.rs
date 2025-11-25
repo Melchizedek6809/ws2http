@@ -1,3 +1,4 @@
+use anyhow::Result;
 use axum::extract::ws::Message as WsMessage;
 use std::{collections::{HashMap, HashSet}, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, mpsc};
@@ -69,6 +70,9 @@ impl GlobalState {
                 if !set.remove(&handler_state.socket_id) {
                     eprintln!("Socket {} already removed from {alias}... this shouldn't happen", &handler_state.socket_id);
                 }
+                if set.is_empty() {
+                    map.remove(alias);
+                }
             } else {
                 eprintln!("Alias {alias} already removed from state.aliases... this shouldn't happen");
             }
@@ -85,15 +89,19 @@ impl GlobalState {
             for socket_id in ids {
                 let sockets = self.sockets.lock().await;
                 let socket = sockets.get(&socket_id);
-                if let Some(socket) = socket && socket.send(WsMessage::Text(msg.clone().into())).await.is_ok() {
-                    recipients += 1;
+                if let Some(socket) = socket {
+                    let socket = socket.clone();
+                    drop(sockets);
+                    if socket.send(WsMessage::Text(msg.clone().into())).await.is_ok() {
+                        recipients += 1;
+                    }
                 }
             }
         }
         recipients
     }
 
-    pub async fn handle_endpoint_response(&self, handler_state: &mut HandlerState, response: EndpointResponse) {
+    pub async fn handle_endpoint_response(&self, handler_state: &mut HandlerState, response: EndpointResponse) -> Result<()> {
         if let Some(aliases) = &response.aliases {
             for alias in aliases.iter() {
                 if !handler_state.aliases.contains(alias) {
@@ -108,10 +116,14 @@ impl GlobalState {
                 let sinks = self.sockets.lock().await;
                 let sink = sinks.get(&handler_state.socket_id);
                 if let Some(sink) = sink {
-                    sink.send(WsMessage::Text(msg.into())).await.expect("MSPC Send error");
+                    let sink = sink.clone();
+                    drop(sinks);
+                    sink.try_send(WsMessage::Text(msg.into()))?;
                 }
             }
         }
+
+        Ok(())
     }
 
     pub fn http_client(&self) -> reqwest::Client {
