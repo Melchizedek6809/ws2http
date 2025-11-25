@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 struct HandlerState {
+    endpoint: String,
     query: String,
     path: String,
     user_agent: String,
@@ -48,18 +49,55 @@ async fn handle_socket(socket: WebSocket, handler_state: HandlerState, state: Gl
 
         match message {
             Message::Text(payload) => {
+                let http = state.http_client();
+                let form = reqwest::multipart::Form::new()
+                    .text("method", "message")
+                    .text("text", payload.to_string())
+                    .text("query", handler_state.query.to_string())
+                    .text("path", handler_state.path.to_string());
+                let app = http
+                    .request(reqwest::Method::POST, &handler_state.endpoint)
+                    .header("User-Agent", handler_state.user_agent.to_string())
+                    .header("Cookie", handler_state.cookie.to_string())
+                    .header("X-Forwarded-For", handler_state.forwarded_for.to_string())
+                    .multipart(form)
+                    .build();
+
+                if let Ok(app) = app {
+                    let res = http.execute(app).await;
+                    if let Ok(_res) = res {
+
+                    }
+                }
+
                 if outgoing_tx.try_send(Message::Text(payload)).is_err() {
                     break;
                 }
             }
             Message::Binary(_) => {}
-            Message::Ping(payload) => {
-                if outgoing_tx.try_send(Message::Pong(payload)).is_err() {
-                    break;
-                }
-            }
+            Message::Ping(_) => {}
             Message::Pong(_) => {}
             Message::Close(frame) => {
+                let http = state.http_client();
+                let form = reqwest::multipart::Form::new()
+                    .text("method", "close")
+                    .text("query", handler_state.query.to_string())
+                    .text("path", handler_state.path.to_string());
+                let app = http
+                    .request(reqwest::Method::POST, &handler_state.endpoint)
+                    .header("User-Agent", handler_state.user_agent.to_string())
+                    .header("Cookie", handler_state.cookie.to_string())
+                    .header("X-Forwarded-For", handler_state.forwarded_for.to_string())
+                    .multipart(form)
+                    .build();
+
+                if let Ok(app) = app {
+                    let res = http.execute(app).await;
+                    if let Ok(_res) = res {
+
+                    }
+                }
+
                 let _ = outgoing_tx.try_send(Message::Close(frame));
                 break;
             }
@@ -104,6 +142,7 @@ pub async fn main_handler(
         .to_string();
 
     let handler_state = HandlerState {
+        endpoint: "http://localhost:1234/chat.php".to_string(),
         cookie,
         user_agent,
         forwarded_for,
@@ -117,7 +156,7 @@ pub async fn main_handler(
         .text("query", query.to_string())
         .text("path", path.to_string());
     let app = http
-        .request(reqwest::Method::POST, "http://localhost:1234/chat.php")
+        .request(reqwest::Method::POST, &handler_state.endpoint)
         .header("User-Agent", handler_state.user_agent.to_string())
         .header("Cookie", handler_state.cookie.to_string())
         .header("X-Forwarded-For", handler_state.forwarded_for.to_string())

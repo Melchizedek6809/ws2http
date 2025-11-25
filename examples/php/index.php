@@ -28,9 +28,11 @@
         const outbox = document.getElementById("out");
         const send = document.getElementById("send");
         const reconnect = document.getElementById("reconnect");
+        let socket;
 
         const connect = () => {
-            const socket = new WebSocket("ws://127.0.0.1:4000/chat?room=Main");
+            socket?.close();
+            socket = new WebSocket("ws://127.0.0.1:4000/chat?room=Main");
 
             inbox.value = '';
             connectionStatus.innerText = "Connecting...";

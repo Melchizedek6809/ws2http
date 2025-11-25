@@ -5,4 +5,4 @@ $vals["cookie"] = $_COOKIE;
 $vals["post"] = $_POST;
 $vals["server"] = $_SERVER;
 
-file_put_contents("log.tmp", json_encode($vals), FILE_APPEND);
+file_put_contents("log.jsonl", json_encode($vals)."\n", FILE_APPEND);
