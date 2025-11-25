@@ -75,6 +75,24 @@ impl GlobalState {
         }
     }
 
+    pub async fn send_text_message_to_alias(&self, alias: String, msg: String) -> i32  {
+        let mut recipients = 0;
+        let map = self.aliases.lock().await;
+        let set = map.get(&alias);
+        if let Some(set) = set {
+            let ids = set.iter().map(|u| u.to_owned()).collect::<Vec<Uuid>>();
+            drop(map);
+            for socket_id in ids {
+                let sockets = self.sockets.lock().await;
+                let socket = sockets.get(&socket_id);
+                if let Some(socket) = socket && socket.send(WsMessage::Text(msg.clone().into())).await.is_ok() {
+                    recipients += 1;
+                }
+            }
+        }
+        recipients
+    }
+
     pub async fn handle_endpoint_response(&self, handler_state: &mut HandlerState, response: EndpointResponse) {
         if let Some(aliases) = &response.aliases {
             for alias in aliases.iter() {
