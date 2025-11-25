@@ -61,6 +61,20 @@ impl GlobalState {
         }
     }
 
+    pub async fn unregister_handler_state(&self, handler_state: &HandlerState) {
+        let mut map = self.aliases.lock().await;
+        for alias in &handler_state.aliases {
+            let set = map.get_mut(alias);
+            if let Some(set) = set {
+                if !set.remove(&handler_state.socket_id) {
+                    eprintln!("Socket {} already removed from {alias}... this shouldn't happen", &handler_state.socket_id);
+                }
+            } else {
+                eprintln!("Alias {alias} already removed from state.aliases... this shouldn't happen");
+            }
+        }
+    }
+
     pub async fn handle_endpoint_response(&self, handler_state: &mut HandlerState, response: EndpointResponse) {
         if let Some(aliases) = &response.aliases {
             for alias in aliases.iter() {

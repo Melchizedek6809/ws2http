@@ -107,12 +107,12 @@ async fn handle_socket(socket: WebSocket, mut handler_state: HandlerState, state
             Err(_) => break,
         };
 
-        println!("Msg: {message:?}");
-
         match message {
             Message::Text(payload) => {
                 let req = handler_state.endpoint_request(state.http_client(), EndpointEvent::Message, Some(&payload)).await;
-                if req.is_err() {
+                if let Ok(req) = req {
+                    state.handle_endpoint_response(&mut handler_state, req).await;
+                } else {
                     break;
                 }
 
@@ -125,7 +125,9 @@ async fn handle_socket(socket: WebSocket, mut handler_state: HandlerState, state
             Message::Pong(_) => {}
             Message::Close(frame) => {
                 let req = handler_state.endpoint_request(state.http_client(), EndpointEvent::Close, None).await;
-                if req.is_err() {
+                if let Ok(req) = req {
+                    state.handle_endpoint_response(&mut handler_state, req).await;
+                } else {
                     break;
                 }
 
@@ -136,6 +138,7 @@ async fn handle_socket(socket: WebSocket, mut handler_state: HandlerState, state
     }
 
     state.unregister_socket(handler_state.socket_id).await;
+    state.unregister_handler_state(&handler_state).await;
     drop(outgoing_tx);
     let _ = send_task.await;
 }
