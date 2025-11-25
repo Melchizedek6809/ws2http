@@ -1,16 +1,27 @@
+use std::collections::HashMap;
+
 use crate::state::GlobalState;
 use axum::{
     extract::{
-        State, WebSocketUpgrade,
+        OriginalUri, Query, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    response::Response,
+    http::HeaderMap,
+    response::{IntoResponse, Response},
 };
 use futures::{sink::SinkExt, stream::StreamExt};
 use tokio::sync::mpsc;
-use tower_cookies::Cookies;
 
-async fn handle_socket(socket: WebSocket, _cookies: Cookies, state: GlobalState) {
+#[derive(Debug, Clone)]
+struct HandlerState {
+    query: String,
+    path: String,
+    user_agent: String,
+    cookie: String,
+    forwarded_for: String,
+}
+
+async fn handle_socket(socket: WebSocket, handler_state: HandlerState, state: GlobalState) {
     let (socket_sender, mut receiver) = socket.split();
     // Bounded channel with capacity of 100 messages to prevent unbounded memory growth
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(100);
@@ -62,9 +73,70 @@ async fn handle_socket(socket: WebSocket, _cookies: Cookies, state: GlobalState)
 
 pub async fn main_handler(
     ws: WebSocketUpgrade,
-    cookies: Cookies,
+    headers: HeaderMap,
+    uri: OriginalUri,
+    Query(params): Query<HashMap<String, String>>,
     State(state): State<GlobalState>,
 ) -> Response {
-    println!("main_handler {cookies:?}");
-    ws.on_upgrade(|socket| handle_socket(socket, cookies, state))
+    let uri = uri.0.path_and_query();
+    let (path, query) = uri
+        .map(|v| (v.path(), v.query().unwrap_or_default()))
+        .unwrap_or_default();
+
+    println!("{path:?} {query:?} {headers:?}\n{params:?}");
+
+    let cookie = headers
+        .get("Cookie")
+        .map(|h| h.to_str().unwrap_or(""))
+        .unwrap_or("")
+        .to_string();
+
+    let user_agent = headers
+        .get("User-Agent")
+        .map(|h| h.to_str().unwrap_or(""))
+        .unwrap_or("")
+        .to_string();
+
+    let forwarded_for = headers
+        .get("X-Forwarded-For")
+        .map(|h| h.to_str().unwrap_or(""))
+        .unwrap_or("")
+        .to_string();
+
+    let handler_state = HandlerState {
+        cookie,
+        user_agent,
+        forwarded_for,
+        query: query.to_string(),
+        path: path.to_string(),
+    };
+
+    let http = state.http_client();
+    let form = reqwest::multipart::Form::new()
+        .text("method", "connect")
+        .text("query", query.to_string())
+        .text("path", path.to_string());
+    let app = http
+        .request(reqwest::Method::POST, "http://localhost:1234/chat.php")
+        .header("User-Agent", handler_state.user_agent.to_string())
+        .header("Cookie", handler_state.cookie.to_string())
+        .header("X-Forwarded-For", handler_state.forwarded_for.to_string())
+        .multipart(form)
+        .build();
+
+    if let Ok(app) = app {
+        let res = http.execute(app).await;
+        match res {
+            Err(err) => {
+                eprintln!("Error: {err:?}");
+                (axum::http::StatusCode::BAD_GATEWAY, "Bad request").into_response()
+            }
+            Ok(res) => {
+                eprintln!("Res: {res:?}");
+                ws.on_upgrade(|socket| handle_socket(socket, handler_state, state))
+            }
+        }
+    } else {
+        (axum::http::StatusCode::BAD_REQUEST, "Bad request").into_response()
+    }
 }

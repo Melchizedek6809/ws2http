@@ -1,6 +1,5 @@
 use crate::handler::main_handler;
 use axum::Router;
-use tower_cookies::CookieManagerLayer;
 
 mod handler;
 mod state;
@@ -16,10 +15,7 @@ async fn main() -> anyhow::Result<()> {
     let bind_addr = state.config.bind_addr;
 
     // build our application with a single route
-    let app = Router::new()
-        .fallback(main_handler)
-        .layer(CookieManagerLayer::new())
-        .with_state(state);
+    let app = Router::new().fallback(main_handler).with_state(state);
 
     let socket = tokio::net::TcpSocket::new_v4()?;
 
