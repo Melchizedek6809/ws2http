@@ -1,8 +1,8 @@
-use axum::{Json, Router, extract::{Form,State}, response::IntoResponse, routing::post};
+use axum::{Json, Router, extract::State, response::IntoResponse, routing::post};
 use serde::Deserialize;
 use serde_json::json;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct ApiSend {
     aliases: Option<Vec<String>>,
     text_messages: Option<Vec<String>>,
@@ -12,8 +12,10 @@ use crate::state::GlobalState;
 
 async fn api_send(
     State(state): State<GlobalState>,
-    Form(form): Form<ApiSend>,
+    axum::extract::Json(form): axum::extract::Json<ApiSend>,
 ) -> impl IntoResponse {
+    eprintln!("{form:?}");
+
     let mut recipients = 0;
     if let Some(aliases) = &form.aliases && let Some(msgs) = &form.text_messages {
         for msg in msgs {

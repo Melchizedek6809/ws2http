@@ -84,12 +84,13 @@ impl HandlerState {
     }
 }
 
-async fn handle_socket(socket: WebSocket, mut handler_state: HandlerState, state: GlobalState) {
+async fn handle_socket(socket: WebSocket, mut handler_state: HandlerState, state: GlobalState, res: EndpointResponse) {
     let (socket_sender, mut receiver) = socket.split();
     // Bounded channel with capacity of 100 messages to prevent unbounded memory growth
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(100);
 
     state.register_socket(handler_state.socket_id, outgoing_tx.clone()).await;
+    state.handle_endpoint_response(&mut handler_state, res).await;
 
     let send_task = tokio::spawn(async move {
         let mut socket_sender = socket_sender;
@@ -192,8 +193,7 @@ pub async fn main_handler(
 
     let req = handler_state.endpoint_request(state.http_client(), EndpointEvent::Connect, None).await;
     if let Ok(req) = req {
-        state.handle_endpoint_response(&mut handler_state, req).await;
-        ws.on_upgrade(|socket| handle_socket(socket, handler_state, state))
+        ws.on_upgrade(|socket| handle_socket(socket, handler_state, state, req))
     } else {
         (axum::http::StatusCode::BAD_REQUEST, "Bad request").into_response()
     }
