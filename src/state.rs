@@ -1,5 +1,6 @@
 use anyhow::Result;
 use axum::extract::ws::Message as WsMessage;
+use serde::Serialize;
 use std::{collections::{HashMap, HashSet}, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, mpsc};
 use uuid::Uuid;
@@ -21,6 +22,12 @@ pub struct GlobalState {
     pub config: AppConfig,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct GlobalStateStats {
+    alias_count: usize,
+    socket_count: usize,
+}
+
 impl GlobalState {
     pub async fn new() -> anyhow::Result<Self> {
         let bind_addr = std::env::var("BIND_ADDR")
@@ -39,6 +46,22 @@ impl GlobalState {
             config: AppConfig { bind_addr },
         };
         Ok(state)
+    }
+
+    pub async fn get_stats(&self) -> GlobalStateStats {
+
+        let aliases = self.aliases.lock().await;
+        let alias_count = aliases.len();
+        drop(aliases);
+
+        let sockets = self.sockets.lock().await;
+        let socket_count = sockets.len();
+        drop(sockets);
+
+        GlobalStateStats {
+            alias_count,
+            socket_count,
+        }
     }
 
     pub async fn register_socket(&self, socket_id: Uuid, sender: mpsc::Sender<WsMessage>) {

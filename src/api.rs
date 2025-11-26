@@ -1,4 +1,4 @@
-use axum::{Json, Router, extract::State, response::IntoResponse, routing::post};
+use axum::{Json, Router, extract::State, response::IntoResponse, routing::{get, post}};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -31,6 +31,15 @@ async fn api_send(
     }))
 }
 
+async fn api_stats(
+    State(state): State<GlobalState>,
+) -> impl IntoResponse {
+    Json(state.get_stats().await)
+}
+
+
 pub fn router() -> Router<GlobalState> {
-    Router::new().route("/send", post(api_send))
+    Router::new()
+        .route("/send", post(api_send))
+        .route("/stats", get(api_stats))
 }
